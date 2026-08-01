@@ -1,0 +1,527 @@
+﻿<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>WeatherApex | Precision for the Modern Traveler</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          "colors": {
+                  "on-primary-fixed-variant": "#004c6e",
+                  "secondary-fixed-dim": "#adc6ff",
+                  "primary-fixed": "#c9e6ff",
+                  "surface-bright": "#f8f9ff",
+                  "secondary-fixed": "#d8e2ff",
+                  "background": "#f8f9ff",
+                  "surface": "#f8f9ff",
+                  "surface-dim": "#cbdbf5",
+                  "surface-container-highest": "#d3e4fe",
+                  "surface-tint": "#006591",
+                  "inverse-primary": "#89ceff",
+                  "surface-container": "#e5eeff",
+                  "on-tertiary-fixed": "#002113",
+                  "surface-container-low": "#eff4ff",
+                  "surface-container-lowest": "#ffffff",
+                  "secondary-container": "#2170e4",
+                  "primary": "#006591",
+                  "on-surface-variant": "#3e4850",
+                  "on-tertiary-container": "#003b26",
+                  "primary-fixed-dim": "#89ceff",
+                  "on-secondary-fixed": "#001a42",
+                  "inverse-surface": "#213145",
+                  "error": "#ba1a1a",
+                  "on-primary-fixed": "#001e2f",
+                  "on-secondary-container": "#fefcff",
+                  "tertiary-fixed": "#6ffbbe",
+                  "outline": "#6e7881",
+                  "on-primary-container": "#003751",
+                  "on-primary": "#ffffff",
+                  "on-error-container": "#93000a",
+                  "error-container": "#ffdad6",
+                  "tertiary-fixed-dim": "#4edea3",
+                  "on-background": "#0b1c30",
+                  "on-secondary-fixed-variant": "#004395",
+                  "tertiary": "#006c49",
+                  "surface-variant": "#d3e4fe",
+                  "outline-variant": "#bec8d2",
+                  "on-secondary": "#ffffff",
+                  "on-tertiary": "#ffffff",
+                  "on-surface": "#0b1c30",
+                  "tertiary-container": "#00b17b",
+                  "surface-container-high": "#dce9ff",
+                  "secondary": "#0058be",
+                  "on-tertiary-fixed-variant": "#005236",
+                  "inverse-on-surface": "#eaf1ff",
+                  "primary-container": "#0ea5e9",
+                  "on-error": "#ffffff"
+          },
+          "borderRadius": {
+                  "DEFAULT": "0.25rem",
+                  "lg": "0.5rem",
+                  "xl": "0.75rem",
+                  "full": "9999px"
+          },
+          "spacing": {
+                  "section-gap-mobile": "3rem",
+                  "section-gap-desktop": "5rem",
+                  "gutter": "1.5rem",
+                  "container-max": "1280px"
+          },
+          "fontFamily": {
+                  "headline-md": ["Inter"],
+                  "body-lg": ["Inter"],
+                  "display-lg-mobile": ["Inter"],
+                  "label-caps": ["Inter"],
+                  "data-mono": ["Inter"],
+                  "body-md": ["Inter"],
+                  "display-lg": ["Inter"]
+          },
+          "fontSize": {
+                  "headline-md": ["24px", {"lineHeight": "32px", "letterSpacing": "-0.01em", "fontWeight": "600"}],
+                  "body-lg": ["18px", {"lineHeight": "28px", "fontWeight": "400"}],
+                  "display-lg-mobile": ["36px", {"lineHeight": "44px", "letterSpacing": "-0.02em", "fontWeight": "700"}],
+                  "label-caps": ["12px", {"lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "600"}],
+                  "data-mono": ["14px", {"lineHeight": "20px", "fontWeight": "500"}],
+                  "body-md": ["16px", {"lineHeight": "24px", "fontWeight": "400"}],
+                  "display-lg": ["48px", {"lineHeight": "56px", "letterSpacing": "-0.02em", "fontWeight": "700"}]
+          }
+        },
+      },
+    }
+  </script>
+<style>
+    body { font-family: 'Inter', sans-serif; -webkit-font-smoothing: antialiased; }
+    .material-symbols-outlined { font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24; }
+    .hide-scrollbar::-webkit-scrollbar { display: none; }
+    .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+    
+    /* Animation for the mobile menu */
+    #mobile-menu {
+      transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      transform: translateY(-100%);
+    }
+    #mobile-menu.active {
+      transform: translateY(0);
+    }
+  </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-surface text-on-surface">
+<!-- TopNavBar (Shared Component Mobile Strategy) -->
+<header class="sticky top-0 z-50 w-full bg-surface-container-lowest border-b border-outline-variant shadow-sm">
+<div class="px-gutter py-3">
+<!-- Top Row -->
+<div class="flex items-center justify-between">
+<div class="text-headline-md font-bold text-primary">WeatherApex</div>
+<button class="p-2 text-on-surface-variant active:scale-95 transition-all" id="menu-toggle">
+<span class="material-symbols-outlined text-[32px]">menu</span>
+</button>
+</div>
+<!-- Search Bar Row -->
+<div class="mt-3 relative">
+<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-outline">search</span>
+<input class="w-full h-12 pl-10 pr-4 bg-surface-container border-none rounded-lg text-body-md focus:ring-2 focus:ring-primary outline-none" placeholder="Search city or airport" type="text"/>
+</div>
+</div>
+<!-- Collapsible Menu -->
+<div class="absolute left-0 top-full w-full bg-surface-container-lowest border-b border-outline-variant shadow-lg overflow-hidden hidden" id="mobile-menu">
+<nav class="flex flex-col p-gutter space-y-4">
+<a class="text-primary font-semibold border-b-2 border-primary pb-1 self-start" href="#">Home</a>
+<a class="text-on-surface-variant font-body-md py-1" href="#">Trip Planner</a>
+<a class="text-on-surface-variant font-body-md py-1" href="#">Events</a>
+<a class="text-on-surface-variant font-body-md py-1" href="#">Blog</a>
+<a class="text-on-surface-variant font-body-md py-1" href="#">Pricing</a>
+<div class="flex flex-col gap-3 pt-4 border-t border-outline-variant">
+<button class="w-full h-12 border border-primary text-primary font-semibold rounded-lg active:scale-95 transition-all">Sign In</button>
+<button class="w-full h-12 bg-primary-container text-on-primary-container font-semibold rounded-lg active:scale-95 transition-all">Sign Up</button>
+</div>
+</nav>
+</div>
+</header>
+<main class="max-w-container-max mx-auto">
+<!-- Hero Weather Widget -->
+<section class="px-gutter pt-6 pb-section-gap-mobile">
+<div class="bg-surface-container-low rounded-xl border border-outline-variant p-6 shadow-sm">
+<div class="flex justify-between items-start mb-6">
+<div>
+<h1 class="text-headline-md text-on-surface">London, UK</h1>
+<p class="text-body-md text-on-surface-variant">Monday, 24 June</p>
+</div>
+<span class="material-symbols-outlined text-[48px] text-[#EAB308]" style="font-variation-settings: 'FILL' 1;">light_mode</span>
+</div>
+<div class="flex flex-col mb-8">
+<div class="text-[48px] font-bold text-on-surface leading-none">24Â°C</div>
+<div class="mt-4 grid grid-cols-3 gap-4 border-t border-outline-variant pt-4">
+<div class="flex flex-col items-center">
+<span class="material-symbols-outlined text-primary text-[20px]">water_drop</span>
+<span class="text-label-caps mt-1">Precip</span>
+<span class="text-data-mono font-bold">12%</span>
+</div>
+<div class="flex flex-col items-center border-x border-outline-variant">
+<span class="material-symbols-outlined text-primary text-[20px]">humidity_mid</span>
+<span class="text-label-caps mt-1">Humid</span>
+<span class="text-data-mono font-bold">65%</span>
+</div>
+<div class="flex flex-col items-center">
+<span class="material-symbols-outlined text-primary text-[20px]">air</span>
+<span class="text-label-caps mt-1">Wind</span>
+<span class="text-data-mono font-bold">14km/h</span>
+</div>
+</div>
+</div>
+<!-- Temperature Graph Placeholder -->
+<div class="h-32 w-full mb-6 relative overflow-hidden bg-surface-container rounded-lg">
+<svg class="absolute bottom-0 w-full h-full" preserveaspectratio="none" viewbox="0 0 400 100">
+<path d="M0,80 Q50,40 100,60 T200,30 T300,50 T400,20" fill="none" stroke="#0ea5e9" stroke-width="3"></path>
+<path d="M0,80 Q50,40 100,60 T200,30 T300,50 T400,20 V100 H0 Z" fill="url(#grad)" opacity="0.1"></path>
+<defs>
+<lineargradient id="grad" x1="0%" x2="0%" y1="0%" y2="100%">
+<stop offset="0%" style="stop-color:#0ea5e9;stop-opacity:1"></stop>
+<stop offset="100%" style="stop-color:#0ea5e9;stop-opacity:0"></stop>
+</lineargradient>
+</defs>
+</svg>
+</div>
+<!-- Hourly Forecast Strip -->
+<div class="flex gap-4 overflow-x-auto hide-scrollbar -mx-2 px-2 pb-2">
+<!-- Hour Cards -->
+<div class="flex-shrink-0 w-20 bg-surface-container-lowest p-3 rounded-lg border border-outline-variant text-center">
+<span class="text-label-caps text-on-surface-variant">Now</span>
+<span class="material-symbols-outlined block my-2 text-primary" style="font-variation-settings: 'FILL' 1;">light_mode</span>
+<span class="text-data-mono font-bold">24Â°</span>
+</div>
+<div class="flex-shrink-0 w-20 bg-surface-container-lowest p-3 rounded-lg border border-outline-variant text-center">
+<span class="text-label-caps text-on-surface-variant">14:00</span>
+<span class="material-symbols-outlined block my-2 text-primary" style="font-variation-settings: 'FILL' 1;">partly_cloudy_day</span>
+<span class="text-data-mono font-bold">25Â°</span>
+</div>
+<div class="flex-shrink-0 w-20 bg-surface-container-lowest p-3 rounded-lg border border-outline-variant text-center">
+<span class="text-label-caps text-on-surface-variant">15:00</span>
+<span class="material-symbols-outlined block my-2 text-primary" style="font-variation-settings: 'FILL' 1;">cloud</span>
+<span class="text-data-mono font-bold">23Â°</span>
+</div>
+<div class="flex-shrink-0 w-20 bg-surface-container-lowest p-3 rounded-lg border border-outline-variant text-center">
+<span class="text-label-caps text-on-surface-variant">16:00</span>
+<span class="material-symbols-outlined block my-2 text-primary" style="font-variation-settings: 'FILL' 1;">rainy</span>
+<span class="text-data-mono font-bold">21Â°</span>
+</div>
+</div>
+</div>
+</section>
+<!-- 7-Day Forecast (Vertical List) -->
+<section class="px-gutter pb-section-gap-mobile">
+<h2 class="text-headline-md mb-4">7-Day Forecast</h2>
+<div class="flex flex-col space-y-2">
+<div class="bg-surface-container-lowest border border-outline-variant p-4 rounded-xl flex items-start justify-between relative overflow-hidden">
+<div class="flex items-center gap-4">
+<span class="material-symbols-outlined text-[28px] text-[#EAB308]">light_mode</span>
+<div>
+<div class="flex items-center gap-2">
+<span class="font-bold text-body-md">Tuesday</span>
+<span class="text-body-md text-on-surface-variant">26Â° / 18Â°</span>
+</div>
+<p class="text-label-caps text-on-surface-variant mt-1">Clear Skies</p>
+</div>
+</div>
+<span class="bg-tertiary-container/20 text-on-tertiary-container text-[10px] px-2 py-0.5 rounded-full font-bold">0%</span>
+</div>
+<div class="bg-surface-container-low border border-outline-variant p-4 rounded-xl flex items-start justify-between relative overflow-hidden">
+<div class="flex items-center gap-4">
+<span class="material-symbols-outlined text-[28px] text-primary">rainy</span>
+<div>
+<div class="flex items-center gap-2">
+<span class="font-bold text-body-md">Wednesday</span>
+<span class="text-body-md text-on-surface-variant">22Â° / 15Â°</span>
+</div>
+<p class="text-label-caps text-on-surface-variant mt-1">Light Rain</p>
+</div>
+</div>
+<span class="bg-primary-container/20 text-on-primary-container text-[10px] px-2 py-0.5 rounded-full font-bold">85%</span>
+</div>
+<div class="bg-surface-container-lowest border border-outline-variant p-4 rounded-xl flex items-start justify-between relative overflow-hidden">
+<div class="flex items-center gap-4">
+<span class="material-symbols-outlined text-[28px] text-outline">cloud</span>
+<div>
+<div class="flex items-center gap-2">
+<span class="font-bold text-body-md">Thursday</span>
+<span class="text-body-md text-on-surface-variant">23Â° / 17Â°</span>
+</div>
+<p class="text-label-caps text-on-surface-variant mt-1">Overcast</p>
+</div>
+</div>
+<span class="bg-tertiary-container/20 text-on-tertiary-container text-[10px] px-2 py-0.5 rounded-full font-bold">12%</span>
+</div>
+</div>
+</section>
+<!-- Interactive Map -->
+<section class="px-gutter pb-section-gap-mobile">
+<h2 class="text-headline-md mb-4">Live Weather Radar</h2>
+<div class="relative w-full h-[300px] bg-surface-container rounded-xl border border-outline-variant overflow-hidden">
+<div class="w-full h-full bg-cover bg-center opacity-80" data-alt="A stylized professional meteorological satellite map showing weather patterns across Europe. The map uses a minimalist color palette of deep blues and charcoal grays, with vibrant green and orange precipitation overlays. UI markers for Paris, London, and Berlin are crisp and modern with soft shadows." style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuDJgjn25nQdk_LqqkETGVSQJ7hHsLig8m8VUev1E2EhNjyjM3PdERdPngdPb8YkO_-YtmE8tvgkIQje8sexD1_EHgYQf0b81r5_MluLtc0az5B7V0wIRE2WXfYMyT-dysVKnmZNzxi1pPsORibvQtGgYBng63yKrnUOtpUN9auRKd4byvs7Dwxnl_SA43WqRDU1EHk5aYfYaSqALgQHebUesUdLUrnY0EqRqn0VXNFY9guv3pE8GjtuuYs2W1QgDle2yqoATLkGhJ2F')"></div>
+<!-- City Markers -->
+<div class="absolute top-1/4 left-1/3 bg-surface-container-lowest px-2 py-1 rounded shadow-md border border-outline-variant flex items-center gap-1">
+<div class="w-2 h-2 rounded-full bg-primary animate-pulse"></div>
+<span class="text-label-caps font-bold">Paris 22Â°</span>
+</div>
+<div class="absolute top-1/2 left-1/2 bg-surface-container-lowest px-2 py-1 rounded shadow-md border border-outline-variant flex items-center gap-1">
+<div class="w-2 h-2 rounded-full bg-primary animate-pulse"></div>
+<span class="text-label-caps font-bold">Berlin 20Â°</span>
+</div>
+<button class="absolute bottom-4 right-4 bg-primary text-on-primary w-12 h-12 rounded-full flex items-center justify-center shadow-lg">
+<span class="material-symbols-outlined">zoom_in</span>
+</button>
+</div>
+</section>
+<!-- Popular Cities -->
+<section class="pb-section-gap-mobile">
+<div class="px-gutter flex justify-between items-end mb-4">
+<h2 class="text-headline-md">Popular Cities</h2>
+<a class="text-primary font-semibold text-body-md" href="#">View all</a>
+</div>
+<div class="flex gap-4 overflow-x-auto hide-scrollbar px-gutter">
+<!-- City Card 1 -->
+<div class="flex-shrink-0 w-64 bg-surface-container-lowest rounded-xl border border-outline-variant overflow-hidden shadow-sm">
+<div class="h-32 bg-cover bg-center" data-alt="A high-resolution travel photography shot of the Tokyo skyline at dusk, emphasizing the neon lights and modern architecture. The lighting is moody and cinematic with a mix of cool blues and warm pinks. The image feels premium, airy, and professional." style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuBveI7T-TxO2Ol2JG5gNvZM60IHeJ4ZhVNE88_6V2W8QfMA11dBGIOGhCukC6PmuiaMUosL0tlvmI5B9s_CD-qGKm2Dw5Q85mEDdx8DDaHd6ZIuxCuuwIxyXE8ksldzSS4bJ1OAnPKxQgjE3EzVsvVuuj5mCmUy_gRiTdqTGXDhzZK2Gi4JaVetHj3rJ8VJaRh8yA-BwEEqyNjXD2dtLaQ__cu3kU_3XfvBsKg6k6fiq_i0zAUL7XqcfIZAKyhE5NVPZxdzcnZX51Up')"></div>
+<div class="p-4 flex justify-between items-center">
+<div>
+<p class="font-bold text-body-md">Tokyo, JP</p>
+<p class="text-label-caps text-on-surface-variant">Partly Cloudy</p>
+</div>
+<div class="text-right">
+<p class="font-bold text-headline-md text-primary">28Â°</p>
+</div>
+</div>
+</div>
+<!-- City Card 2 (Peeking) -->
+<div class="flex-shrink-0 w-64 bg-surface-container-lowest rounded-xl border border-outline-variant overflow-hidden shadow-sm">
+<div class="h-32 bg-cover bg-center" data-alt="A professional travel photograph of New York City Central Park during autumn, with golden and orange foliage against a clear blue sky. The shot is bright, high-key, and conveys a clean, corporate travel aesthetic." style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuAEWSpo3pYvdt5O9tAor8ZXyW5UhMKapZqIMPEdpl74HIRl2lD-1z_uDF2N6C_8LQLhrfbRYlEaiRn7vSD2deBrm6xeDqTf_q8VcrDNMjGLO58nNTQvZpJfImWEgxvfLGdOnueg5BKR3qvlQ300P_Gv4kVp7JHU0ngaS3ht8MXfDVCET12emLqAT2XPn8fyHGXmOkYNm7JWE-9nVFpYCECt3YlOAXsYsbCuU36LZTCZgeT6zT8cZx3FvKrn8MPfVU6W0527eVdPA48N')"></div>
+<div class="p-4 flex justify-between items-center">
+<div>
+<p class="font-bold text-body-md">New York, US</p>
+<p class="text-label-caps text-on-surface-variant">Sunny</p>
+</div>
+<div class="text-right">
+<p class="font-bold text-headline-md text-primary">24Â°</p>
+</div>
+</div>
+</div>
+</div>
+</section>
+<!-- Feature Cards -->
+<section class="px-gutter pb-section-gap-mobile space-y-4">
+<div class="bg-surface-container-low border border-outline-variant p-5 rounded-xl flex items-center gap-5">
+<div class="w-12 h-12 flex-shrink-0 bg-primary/10 rounded-lg flex items-center justify-center text-primary">
+<span class="material-symbols-outlined text-[32px]">analytics</span>
+</div>
+<div>
+<h3 class="font-bold text-body-md">Hyper-Local Data</h3>
+<p class="text-body-md text-on-surface-variant leading-tight">Precision forecasting within a 1km radius.</p>
+</div>
+</div>
+<div class="bg-surface-container-low border border-outline-variant p-5 rounded-xl flex items-center gap-5">
+<div class="w-12 h-12 flex-shrink-0 bg-primary/10 rounded-lg flex items-center justify-center text-primary">
+<span class="material-symbols-outlined text-[32px]">travel_explore</span>
+</div>
+<div>
+<h3 class="font-bold text-body-md">Global Coverage</h3>
+<p class="text-body-md text-on-surface-variant leading-tight">Reliable weather data for 40,000+ cities.</p>
+</div>
+</div>
+</section>
+<!-- Trip Planner Preview -->
+<section class="px-gutter pb-section-gap-mobile">
+<div class="bg-surface-container-lowest border border-outline-variant rounded-2xl p-6 shadow-sm">
+<h2 class="text-headline-md mb-6">Trip Planner</h2>
+<div class="space-y-4 mb-6">
+<div class="flex flex-col gap-1">
+<label class="text-label-caps text-on-surface-variant ml-1">Destination</label>
+<input class="h-12 border border-outline-variant rounded-lg px-4 focus:ring-2 focus:ring-primary outline-none" type="text" value="Kyoto, Japan"/>
+</div>
+<div class="grid grid-cols-2 gap-4">
+<div class="flex flex-col gap-1">
+<label class="text-label-caps text-on-surface-variant ml-1">Start Date</label>
+<input class="h-12 border border-outline-variant rounded-lg px-4 focus:ring-2 focus:ring-primary outline-none" type="text" value="Nov 12"/>
+</div>
+<div class="flex flex-col gap-1">
+<label class="text-label-caps text-on-surface-variant ml-1">End Date</label>
+<input class="h-12 border border-outline-variant rounded-lg px-4 focus:ring-2 focus:ring-primary outline-none" type="text" value="Nov 18"/>
+</div>
+</div>
+</div>
+<div class="bg-primary/5 border border-primary/20 p-4 rounded-xl flex items-center justify-between">
+<div>
+<p class="text-label-caps text-primary font-bold">Weather Score</p>
+<p class="text-body-md text-on-surface-variant">Ideal conditions expected.</p>
+</div>
+<div class="w-14 h-14 rounded-full border-4 border-primary border-t-transparent flex items-center justify-center">
+<span class="font-bold text-primary text-body-lg">8.2</span>
+</div>
+</div>
+</div>
+</section>
+<!-- Event Risk Preview -->
+<section class="pb-section-gap-mobile">
+<div class="px-gutter mb-4">
+<h2 class="text-headline-md">Event Risk</h2>
+</div>
+<div class="flex gap-2 overflow-x-auto hide-scrollbar px-gutter mb-6">
+<button class="flex-shrink-0 px-4 h-10 bg-primary text-on-primary rounded-full font-semibold text-body-md">Wedding</button>
+<button class="flex-shrink-0 px-4 h-10 border border-outline-variant rounded-full text-on-surface-variant font-semibold text-body-md">Marathon</button>
+<button class="flex-shrink-0 px-4 h-10 border border-outline-variant rounded-full text-on-surface-variant font-semibold text-body-md">Concert</button>
+<button class="flex-shrink-0 px-4 h-10 border border-outline-variant rounded-full text-on-surface-variant font-semibold text-body-md">Festival</button>
+</div>
+<div class="px-gutter">
+<div class="bg-surface-container-high p-8 rounded-2xl flex flex-col items-center text-center">
+<div class="relative w-40 h-40 mb-6">
+<svg class="w-full h-full -rotate-90" viewbox="0 0 100 100">
+<circle class="text-surface-variant" cx="50" cy="50" fill="none" r="45" stroke="currentColor" stroke-width="8"></circle>
+<circle class="text-tertiary" cx="50" cy="50" fill="none" r="45" stroke="currentColor" stroke-dasharray="282.7" stroke-dashoffset="240" stroke-width="8"></circle>
+</svg>
+<div class="absolute inset-0 flex flex-col items-center justify-center">
+<span class="text-headline-md font-bold text-tertiary">Low</span>
+<span class="text-label-caps text-on-surface-variant">Risk Level</span>
+</div>
+</div>
+<h3 class="font-bold text-body-lg mb-2">Outdoor Wedding Potential</h3>
+<p class="text-body-md text-on-surface-variant">Weather conditions are 92% favorable for your chosen date.</p>
+</div>
+</div>
+</section>
+<!-- Blog Preview -->
+<section class="pb-section-gap-mobile">
+<div class="px-gutter mb-4 flex justify-between items-end">
+<h2 class="text-headline-md">Weather Insights</h2>
+<a class="text-primary font-semibold text-body-md" href="#">Blog</a>
+</div>
+<div class="flex gap-4 overflow-x-auto hide-scrollbar px-gutter">
+<div class="flex-shrink-0 w-72 bg-surface-container-lowest border border-outline-variant rounded-xl overflow-hidden">
+<div class="h-40 bg-cover bg-center" data-alt="A professional, clean digital illustration of advanced weather satellite technology in orbit over earth. The style is modern corporate, using a palette of white, light blue, and silver. High whitespace and soft lighting." style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuDjR3S3-0YSOudaIovC2iwEcdpiiZalIyM3TxkpBzh-1gd8pnOKyXnmlqZB_uHztDYZD0E9p9naSVGdO9xkSOkTENhEBHEO1GwLiSwprrPF4vmaTL1b96YwmeQli4cUk7A7jZAwWwcRLB9qGrME2dEfQ4loJ2uo1r2wv213qNpjqYRKJAjKIQkBcXdxhSZdGiL674hLe6VWnTi9vuLAa_adni4krcLLLKcoTcEAWo-43QvtQOkopU1kr79iPpD_ZzVWsLsORcsNjh78')"></div>
+<div class="p-4">
+<span class="text-label-caps text-primary font-bold">Tech</span>
+<h3 class="font-bold text-body-md mt-1 line-clamp-2">How AI is changing local weather forecasting accuracy.</h3>
+</div>
+</div>
+<div class="flex-shrink-0 w-72 bg-surface-container-lowest border border-outline-variant rounded-xl overflow-hidden">
+<div class="h-40 bg-cover bg-center" data-alt="A premium travel photograph of a high-end ski resort in the Swiss Alps, featuring luxury chalets and pristine snow-covered peaks under a bright sun. The image conveys wealth, planning, and reliability." style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuDft-2deEDH6ndftpjk8J7BwA4GNkP6fAcIXBBU6j6-O6w_7hBObAOAZRG0gu5l3-2Rl-6pjnHObnN7jvPgr8MBNdXDhX_0-CCCpL-qFb3Omk9iBJmlPgvGqa0WfIJS3QO_VJfLpNvMgHovkbgCHNTL9wI7hbhjTlMQbC7UwRMcDMwLlu-7eQea286x4ewlCj3bwsqhGsYNbzioldC_1QNWA4B7Hwl4U0UZZSqJLprgcUQnHFOBewxQsZuzIhxY2CXDoLKNOyPFETpO')"></div>
+<div class="p-4">
+<span class="text-label-caps text-primary font-bold">Travel</span>
+<h3 class="font-bold text-body-md mt-1 line-clamp-2">The best ski destinations for reliable snow this winter.</h3>
+</div>
+</div>
+</div>
+</section>
+<!-- Stats 2x2 Grid -->
+<section class="px-gutter pb-section-gap-mobile">
+<div class="grid grid-cols-2 gap-4">
+<div class="bg-surface-container-low p-6 rounded-xl border border-outline-variant text-center">
+<p class="text-headline-md font-bold text-primary">50M+</p>
+<p class="text-label-caps text-on-surface-variant uppercase mt-1">Users</p>
+</div>
+<div class="bg-surface-container-low p-6 rounded-xl border border-outline-variant text-center">
+<p class="text-headline-md font-bold text-primary">99.9%</p>
+<p class="text-label-caps text-on-surface-variant uppercase mt-1">Uptime</p>
+</div>
+<div class="bg-surface-container-low p-6 rounded-xl border border-outline-variant text-center">
+<p class="text-headline-md font-bold text-primary">40k+</p>
+<p class="text-label-caps text-on-surface-variant uppercase mt-1">Cities</p>
+</div>
+<div class="bg-surface-container-low p-6 rounded-xl border border-outline-variant text-center">
+<p class="text-headline-md font-bold text-primary">12ms</p>
+<p class="text-label-caps text-on-surface-variant uppercase mt-1">Latency</p>
+</div>
+</div>
+</section>
+</main>
+<!-- Footer (Shared Component Mobile Strategy) -->
+<footer class="bg-surface-container-low border-t border-outline-variant pt-section-gap-mobile pb-12">
+<div class="px-gutter flex flex-col space-y-12">
+<!-- Brand & Tagline -->
+<div class="flex flex-col space-y-4">
+<div class="text-headline-md font-bold text-on-surface">WeatherApex</div>
+<p class="text-body-md text-on-surface-variant max-w-xs">Precision data for the modern traveler. Reliable forecasting for life's most important moments.</p>
+<div class="flex gap-4">
+<span class="material-symbols-outlined text-outline">language</span>
+<span class="material-symbols-outlined text-outline">alternate_email</span>
+<span class="material-symbols-outlined text-outline">public</span>
+</div>
+</div>
+<!-- Links Stacked -->
+<div class="grid grid-cols-1 gap-10">
+<div>
+<h4 class="text-label-caps text-on-surface font-bold mb-4 uppercase">Product</h4>
+<ul class="flex flex-col space-y-3">
+<li><a class="text-body-md text-on-surface-variant" href="#">Live Radar</a></li>
+<li><a class="text-body-md text-on-surface-variant" href="#">Trip Planner</a></li>
+<li><a class="text-body-md text-on-surface-variant" href="#">API Docs</a></li>
+<li><a class="text-body-md text-on-surface-variant" href="#">Mobile App</a></li>
+</ul>
+</div>
+<div>
+<h4 class="text-label-caps text-on-surface font-bold mb-4 uppercase">Resources</h4>
+<ul class="flex flex-col space-y-3">
+<li><a class="text-body-md text-on-surface-variant" href="#">Blog</a></li>
+<li><a class="text-body-md text-on-surface-variant" href="#">Weather News</a></li>
+<li><a class="text-body-md text-on-surface-variant" href="#">Help Center</a></li>
+</ul>
+</div>
+<div>
+<h4 class="text-label-caps text-on-surface font-bold mb-4 uppercase">Company</h4>
+<ul class="flex flex-col space-y-3">
+<li><a class="text-body-md text-on-surface-variant" href="#">About Us</a></li>
+<li><a class="text-body-md text-on-surface-variant" href="#">Careers</a></li>
+<li><a class="text-body-md text-on-surface-variant" href="#">Press Kit</a></li>
+</ul>
+</div>
+<div>
+<h4 class="text-label-caps text-on-surface font-bold mb-4 uppercase">Legal</h4>
+<ul class="flex flex-col space-y-3">
+<li><a class="text-body-md text-on-surface-variant" href="#">Privacy Policy</a></li>
+<li><a class="text-body-md text-on-surface-variant" href="#">Terms of Service</a></li>
+<li><a class="text-body-md text-on-surface-variant" href="#">Cookie Settings</a></li>
+</ul>
+</div>
+</div>
+<div class="pt-8 border-t border-outline-variant text-center">
+<p class="text-label-caps text-on-surface-variant">Â© 2024 WeatherApex. All rights reserved.</p>
+</div>
+</div>
+</footer>
+<script>
+    const menuToggle = document.getElementById('menu-toggle');
+    const mobileMenu = document.getElementById('mobile-menu');
+    
+    menuToggle.addEventListener('click', () => {
+      mobileMenu.classList.toggle('hidden');
+      setTimeout(() => {
+        mobileMenu.classList.toggle('active');
+      }, 10);
+      
+      const icon = menuToggle.querySelector('.material-symbols-outlined');
+      if (icon.textContent === 'menu') {
+        icon.textContent = 'close';
+      } else {
+        icon.textContent = 'menu';
+      }
+    });
+
+    // Close menu on click outside
+    document.addEventListener('click', (e) => {
+      if (!mobileMenu.contains(e.target) && !menuToggle.contains(e.target) && !mobileMenu.classList.contains('hidden')) {
+        mobileMenu.classList.add('hidden');
+        mobileMenu.classList.remove('active');
+        menuToggle.querySelector('.material-symbols-outlined').textContent = 'menu';
+      }
+    });
+  </script>
+</body></html>

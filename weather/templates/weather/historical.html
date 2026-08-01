@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ city.name }} Weather & Climate Guide | WeatherApex</title>
+    <meta name="description" content="Average temperatures, rainfall, and climate data for {{ city.name }}. Based on 10+ years of historical weather data.">
+    <meta name="robots" content="index, follow">
+    <link rel="canonical" href="https://weatherapex.com/weather/{{ city.slug }}/">
+    <link rel="stylesheet" href="/static/weather/historical.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+</head>
+<body>
+
+    <header class="topbar">
+        <div class="topbar-inner">
+            <a href="/" class="logo">WeatherApex</a>
+            <nav>
+                <a href="/trip-planner">Trip Planner</a>
+                <a href="/events">Events</a>
+                <a href="/climate-guides" class="active">Climate Guides</a>
+            </nav>
+        </div>
+    </header>
+
+    <div class="hero">
+        <img class="hero-img" src="https://source.unsplash.com/1600x600/?{{ city.name }},skyline" alt="{{ city.name }} skyline"
+             onerror="this.style.display='none'">
+        <div class="hero-overlay">
+            <h1>{{ city.name }} Climate & Weather Guide</h1>
+            <p>Average temperatures, rainfall and conditions through the year, based on {{ years_of_data }}+ years of data</p>
+        </div>
+    </div>
+
+    <main class="wrap">
+
+        <section class="card">
+            <div class="section-head">
+                <h2>Climate Overview</h2>
+                <span class="pill">{{ city.country }}</span>
+            </div>
+            <p class="lead">{{ narrative_text }}</p>
+            {% if best_months != "varies by preference" %}
+            <p class="best-time"><strong>Best time to visit:</strong> {{ best_months }} — when conditions are most pleasant.</p>
+            {% endif %}
+        </section>
+
+        <section class="card">
+            <div class="section-head">
+                <h2>Temperature & Rainfall by Month</h2>
+            </div>
+            <div class="grid-2">
+                <div class="chart-box">
+                    <h3>Avg High & Low (°C)</h3>
+                    <canvas id="tempChart"></canvas>
+                </div>
+                <div class="chart-box">
+                    <h3>Monthly Rainfall (mm)</h3>
+                    <canvas id="rainChart"></canvas>
+                </div>
+            </div>
+        </section>
+
+        <section class="card">
+            <div class="section-head">
+                <h2>Monthly Averages</h2>
+            </div>
+            <div class="table-scroll">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Month</th>
+                            <th>Avg High</th>
+                            <th>Avg Low</th>
+                            <th>Rainfall</th>
+                            <th>Rainy Days</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for month in monthly_data %}
+                        <tr>
+                            <td>{{ month.month_name }}</td>
+                            <td>{{ month.avg_high }}°C</td>
+                            <td>{{ month.avg_low }}°C</td>
+                            <td>{{ month.avg_rainfall }}mm</td>
+                            <td>{{ month.rainy_days }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <section class="card">
+            <div class="section-head">
+                <h2>What to Pack</h2>
+            </div>
+            <ul class="pack-list">
+                {% for item in packing %}
+                <li>{{ item }}</li>
+                {% endfor %}
+            </ul>
+        </section>
+
+        <div class="cta">
+            <div>
+                <p class="cta-title">Planning a trip to {{ city.name }}?</p>
+                <p class="cta-sub">Get a day-by-day weather plan for your exact travel dates.</p>
+            </div>
+            <a href="/trip-planner?city={{ city.slug }}" class="cta-btn">Use our Trip Planner →</a>
+        </div>
+
+    </main>
+
+    <footer>
+        <p>© 2026 WeatherApex · <a href="/sitemap.xml">Sitemap</a> · <a href="/robots.txt">Robots</a></p>
+    </footer>
+
+    <script>
+        const DATA = {{ chart_json|safe }};
+        const labels = DATA.map(d => d.month);
+
+        if (typeof Chart !== 'undefined') {
+            Chart.defaults.color = '#64748b';
+            Chart.defaults.font.family = 'Arial, sans-serif';
+            Chart.defaults.font.size = 12;
+
+            new Chart(document.getElementById('tempChart'), {
+                type: 'line',
+                data: {
+                    labels,
+                    datasets: [
+                        { label: 'Avg High', data: DATA.map(d => d.high), borderColor: '#0077b6', backgroundColor: 'rgba(0,119,182,0.08)', fill: true, tension: 0.35, pointRadius: 3 },
+                        { label: 'Avg Low', data: DATA.map(d => d.low), borderColor: '#f59e0b', backgroundColor: 'rgba(245,158,11,0.08)', fill: true, tension: 0.35, pointRadius: 3 }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { position: 'top' } }
+                }
+            });
+
+            new Chart(document.getElementById('rainChart'), {
+                type: 'bar',
+                data: {
+                    labels,
+                    datasets: [
+                        { label: 'Rainfall (mm)', data: DATA.map(d => d.rain), backgroundColor: 'rgba(59,130,246,0.55)', borderRadius: 4 }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { display: false } }
+                }
+            });
+        }
+    </script>
+
+</body>
+</html>
