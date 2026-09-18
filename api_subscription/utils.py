@@ -18,7 +18,11 @@ def create_and_send_otp(email, purpose):
     subject = "WeatherApex — Your Verification Code" if purpose == "register" else "WeatherApex — Password Reset Code"
     message = f"Your OTP code is: {otp_code}\nThis code expires in 10 minutes."
 
-    send_mail(subject, message, "noreply@weatherapex.com", [email], fail_silently=False)
+    # From address hardcoded tha (noreply@weatherapex.com) jabke SMTP
+    # auth Gmail account se hota hai — Gmail aise sender ko reject ya
+    # rewrite karta hai. None pass karne se Django DEFAULT_FROM_EMAIL
+    # (= EMAIL_HOST_USER) use karta hai.
+    send_mail(subject, message, None, [email], fail_silently=False)
     return otp_code
 
 

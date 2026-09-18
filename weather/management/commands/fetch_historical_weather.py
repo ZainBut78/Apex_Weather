@@ -1,32 +1,41 @@
 import time
-import statistics
-from datetime import date
 
 import requests
 from django.core.management.base import BaseCommand
 from django.conf import settings
 
-from weather.models import City, HistoricalWeather
+from weather.historical import (
+    DAILY_VARS,
+    aggregate_daily_to_monthly,
+    store_monthly,
+    target_year_range,
+)
+from weather.models import City
 
-HEADERS = {"User-Agent": "WeatherVibe/1.0 (weather research project)"}
+HEADERS = {"User-Agent": f"WeatherApex-HistoryFetch/1.0 (contact: {settings.API_CONTACT_EMAIL})"}
 
 
 class Command(BaseCommand):
-    help = "Fetch historical weather for a single city (1940-2025)"
+    help = "Ek city ka historical weather fetch karo (default: settings.HISTORICAL_YEARS ki range)"
 
     def add_arguments(self, parser):
         parser.add_argument("city_name", type=str)
         parser.add_argument("latitude", type=float)
         parser.add_argument("longitude", type=float)
-        parser.add_argument("--start", type=str, default="1940-01-01")
-        parser.add_argument("--end", type=str, default="2025-12-31")
+        # Default range ab HISTORICAL_YEARS se aati hai, hardcoded
+        # 1940-2025 se nahi (woh har saal purana hota jata tha).
+        parser.add_argument("--start", type=str, default=None,
+                            help="YYYY-MM-DD (default: target range ka start)")
+        parser.add_argument("--end", type=str, default=None,
+                            help="YYYY-MM-DD (default: aakhri poora saal)")
 
     def handle(self, *args, **options):
         city_name = options["city_name"]
         latitude = options["latitude"]
         longitude = options["longitude"]
-        start_date = options["start"]
-        end_date = options["end"]
+        _start_year, _end_year = target_year_range()
+        start_date = options["start"] or f"{_start_year}-01-01"
+        end_date = options["end"] or f"{_end_year}-12-31"
 
         self.stdout.write(f"Fetching: {city_name} ({latitude}, {longitude})")
 
@@ -48,8 +57,7 @@ class Command(BaseCommand):
             "longitude": longitude,
             "start_date": start_date,
             "end_date": end_date,
-            "daily": "temperature_2m_max,temperature_2m_min,precipitation_sum,"
-                     "rain_sum,sunshine_duration,relative_humidity_2m_mean",
+            "daily": DAILY_VARS,
             "timezone": "auto",
         }
 
@@ -79,44 +87,8 @@ class Command(BaseCommand):
             self.stdout.write(self.style.ERROR("Failed after retries."))
             return
 
-        daily = result.get("daily", {})
-        dates = daily.get("time", [])
-        temp_max = daily.get("temperature_2m_max", [])
-        temp_min = daily.get("temperature_2m_min", [])
-        precip = daily.get("precipitation_sum", [])
-        rain = daily.get("rain_sum", [])
-        sun = daily.get("sunshine_duration", [])
-        humidity = daily.get("relative_humidity_2m_mean", [])
-
-        year_months = {}
-        for i, d in enumerate(dates):
-            dt = date.fromisoformat(d)
-            key = (dt.year, dt.month)
-            if key not in year_months:
-                year_months[key] = {"tmax": [], "tmin": [], "rain": [], "precip": [], "sun": [], "hum": []}
-            ym = year_months[key]
-            if i < len(temp_max) and temp_max[i] is not None: ym["tmax"].append(temp_max[i])
-            if i < len(temp_min) and temp_min[i] is not None: ym["tmin"].append(temp_min[i])
-            if i < len(precip) and precip[i] is not None: ym["precip"].append(precip[i])
-            if i < len(rain) and rain[i] is not None and rain[i] > 0.1: ym["rain"].append(1)
-            if i < len(sun) and sun[i] is not None: ym["sun"].append(sun[i] / 3600)
-            if i < len(humidity) and humidity[i] is not None: ym["hum"].append(humidity[i])
-
-        saved = 0
-        for (year, month), ym in sorted(year_months.items()):
-            if not ym["tmax"] and not ym["tmin"]:
-                continue
-            HistoricalWeather.objects.update_or_create(
-                city=city, year=year, month=month,
-                defaults={
-                    "avg_temp_max": round(statistics.mean(ym["tmax"]), 1) if ym["tmax"] else 0,
-                    "avg_temp_min": round(statistics.mean(ym["tmin"]), 1) if ym["tmin"] else 0,
-                    "avg_rainfall": round(sum(ym["precip"]), 1) if ym["precip"] else 0,
-                    "rainy_days": len(ym["rain"]),
-                    "sunshine_hours": round(statistics.mean(ym["sun"]), 1) if ym["sun"] else 0,
-                    "avg_humidity": round(statistics.mean(ym["hum"]), 1) if ym["hum"] else 50.0,
-                },
-            )
-            saved += 1
+        # Aggregation ab shared module se — teeno paths ka ek hi formula.
+        monthly = aggregate_daily_to_monthly(result.get("daily") or {})
+        saved = store_monthly(city, monthly)
 
         self.stdout.write(self.style.SUCCESS(f"Saved {saved} monthly records for {city_name}"))

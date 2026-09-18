@@ -1,15 +1,19 @@
 import time
-import statistics
-from datetime import date
 
 import requests
 from django.core.management.base import BaseCommand
-from django.db.models import Count
 from django.conf import settings
 
-from weather.models import City, HistoricalWeather
+from weather.historical import (
+    DAILY_VARS,
+    aggregate_daily_to_monthly,
+    missing_year_blocks,
+    store_monthly,
+    target_year_range,
+)
+from weather.models import City
 
-HEADERS = {"User-Agent": "WeatherVibe/1.0 (weather research project)"}
+HEADERS = {"User-Agent": f"WeatherApex-HistoryFetch/1.0 (contact: {settings.API_CONTACT_EMAIL})"}
 
 CITIES = [
     # EUROPE - United Kingdom
@@ -271,9 +275,16 @@ CITIES = [
 
 BATCH_SIZE = 5
 
-START_DATE = "1991-01-01"
-END_DATE = "2025-12-31"
-EXPECTED_RECORDS = 420
+# Pehle yeh dono hardcoded thay ("1991-01-01" / "2025-12-31"), is liye
+# naya saal aane par bhi command purana data hi laati thi. Ab
+# settings.HISTORICAL_YEARS se khud calculate hote hain.
+_START_YEAR, _END_YEAR = target_year_range()
+START_DATE = f"{_START_YEAR}-01-01"
+END_DATE = f"{_END_YEAR}-12-31"
+# Range se derive hota hai. Pehle yeh 420 hardcoded tha (35 saal x 12,
+# purani 1991-2025 range ke liye). Range badalne par yeh constant peeche
+# reh gaya tha, jiski wajah se har run saara data delete kar deta tha.
+EXPECTED_RECORDS = (_END_YEAR - _START_YEAR + 1) * 12
 
 
 class Command(BaseCommand):
@@ -285,31 +296,34 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         batch_size = options["batch_size"]
 
-        # Step 1 — Cleanup: delete old/incomplete chunk data for cities we'll re-fetch
-        affected_slugs = []
+        self.stdout.write(self.style.MIGRATE_HEADING(
+            f"Target range: {_START_YEAR}-{_END_YEAR} "
+            f"({_END_YEAR - _START_YEAR + 1} saal, {EXPECTED_RECORDS} monthly records per city)"
+        ))
+
+        # Kaunsi cities ka kaam baqi hai?
+        #
+        # Pehle yahan do khatarnaak cheezein thin:
+        #   1. Ek "cleanup" step jo `count != EXPECTED_RECORDS` wali har city
+        #      ka data DELETE kar deta tha. Constant ghalat ho to poora
+        #      database saaf ho jata tha.
+        #   2. "Done" ka faisla raw record-count se hota tha, range se nahi.
+        #
+        # Ab wahi range-aware check jo sync_historical use karta hai. Aur
+        # koi delete nahi — store_monthly ka bulk upsert purani rows khud
+        # overwrite kar deta hai.
+        remaining = []
         for c in CITIES:
             slug = c["name"].lower().replace(" ", "-").replace(",", "")
-            count = HistoricalWeather.objects.filter(city__slug=slug).count()
-            if count != EXPECTED_RECORDS:
-                affected_slugs.append(slug)
-
-        if affected_slugs:
-            deleted, _ = HistoricalWeather.objects.filter(city__slug__in=affected_slugs).delete()
-            self.stdout.write(self.style.WARNING(f"Cleanup: {deleted} old records deleted from {len(affected_slugs)} cities"))
-
-        # Step 2 — Find cities needing fetch
-        done_slugs = set(
-            City.objects.annotate(record_count=Count("historical_data"))
-            .filter(record_count__gte=EXPECTED_RECORDS)
-            .values_list("slug", flat=True)
-        )
-        remaining = [
-            c for c in CITIES
-            if c["name"].lower().replace(" ", "-").replace(",", "") not in done_slugs
-        ]
+            city = City.objects.filter(slug=slug).first()
+            if city is None:
+                remaining.append(c)          # city hi nahi bani — fetch karo
+                continue
+            if missing_year_blocks(city, _START_YEAR, _END_YEAR):
+                remaining.append(c)          # kuch saal missing hain
 
         self.stdout.write(self.style.WARNING(
-            f"Total: {len(CITIES)} | Done: {len(CITIES) - len(remaining)} | Remaining: {len(remaining)}"
+            f"Total: {len(CITIES)} | Complete: {len(CITIES) - len(remaining)} | Baqi: {len(remaining)}"
         ))
 
         if not remaining:
@@ -348,8 +362,7 @@ class Command(BaseCommand):
             "longitude": ",".join(str(c["lon"]) for c in batch),
             "start_date": start_date,
             "end_date": end_date,
-            "daily": "temperature_2m_max,temperature_2m_min,precipitation_sum,"
-                     "rain_sum,sunshine_duration,relative_humidity_2m_mean",
+            "daily": DAILY_VARS,
             "timezone": "auto",
         }
 
@@ -396,44 +409,8 @@ class Command(BaseCommand):
             },
         )
 
-        daily = result.get("daily", {})
-        dates = daily.get("time", [])
-        temp_max = daily.get("temperature_2m_max", [])
-        temp_min = daily.get("temperature_2m_min", [])
-        precip = daily.get("precipitation_sum", [])
-        rain = daily.get("rain_sum", [])
-        sun = daily.get("sunshine_duration", [])
-        humidity = daily.get("relative_humidity_2m_mean", [])
-
-        year_months = {}
-        for i, d in enumerate(dates):
-            dt = date.fromisoformat(d)
-            key = (dt.year, dt.month)
-            if key not in year_months:
-                year_months[key] = {"tmax": [], "tmin": [], "rain": [], "precip": [], "sun": [], "hum": []}
-            ym = year_months[key]
-            if i < len(temp_max) and temp_max[i] is not None: ym["tmax"].append(temp_max[i])
-            if i < len(temp_min) and temp_min[i] is not None: ym["tmin"].append(temp_min[i])
-            if i < len(precip) and precip[i] is not None: ym["precip"].append(precip[i])
-            if i < len(rain) and rain[i] is not None and rain[i] > 0.1: ym["rain"].append(1)
-            if i < len(sun) and sun[i] is not None: ym["sun"].append(sun[i] / 3600)
-            if i < len(humidity) and humidity[i] is not None: ym["hum"].append(humidity[i])
-
-        saved = 0
-        for (year, month), ym in sorted(year_months.items()):
-            if not ym["tmax"] and not ym["tmin"]:
-                continue
-            HistoricalWeather.objects.update_or_create(
-                city=city, year=year, month=month,
-                defaults={
-                    "avg_temp_max": round(statistics.mean(ym["tmax"]), 1) if ym["tmax"] else 0,
-                    "avg_temp_min": round(statistics.mean(ym["tmin"]), 1) if ym["tmin"] else 0,
-                    "avg_rainfall": round(sum(ym["precip"]), 1) if ym["precip"] else 0,
-                    "rainy_days": len(ym["rain"]),
-                    "sunshine_hours": round(statistics.mean(ym["sun"]), 1) if ym["sun"] else 0,
-                    "avg_humidity": round(statistics.mean(ym["hum"]), 1) if ym["hum"] else 50.0,
-                },
-            )
-            saved += 1
+        # Aggregation ab shared module se — teeno paths ka ek hi formula.
+        monthly = aggregate_daily_to_monthly(result.get("daily") or {})
+        saved = store_monthly(city, monthly)
 
         self.stdout.write(self.style.SUCCESS(f"    {name} - {saved} records"))

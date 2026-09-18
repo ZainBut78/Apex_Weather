@@ -1,9 +1,24 @@
 EVENT_DURATION_HOURS = 3  # config-level constant, future mein user se bhi le sakte hain
 
 
+class DefaultWeights:
+    """Fallback jab EventTypeWeight table khaali ho (fresh deploy, ya
+    seed_event_weights chalaya na gaya ho). Pehle `weights` None hota tha
+    aur calculate_risk_score `None.rain_weight` pe 500 de deta tha."""
+    rain_weight = 1.0
+    wind_weight = 1.0
+    heat_weight = 1.0
+    humidity_weight = 1.0
+
+
+DEFAULT_WEIGHTS = DefaultWeights()
+
+
 def calculate_risk_score(rain_prob, wind_kmh, temp_c, humidity_pct, weights):
     rain_prob = rain_prob or 0
     temp_c = temp_c or 0
+    if weights is None:
+        weights = DEFAULT_WEIGHTS
 
     rain_component = (rain_prob / 10) * weights.rain_weight
     wind_component = wind_penalty(wind_kmh) * weights.wind_weight

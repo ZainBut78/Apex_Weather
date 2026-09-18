@@ -1,32 +1,60 @@
 import json
-import requests
-import statistics
-from collections import defaultdict
-from datetime import date
+import logging
 
-from django.db.models import Avg, Count
+from django.conf import settings
+from django.db.models import Avg
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import render, get_object_or_404
 from django.views.decorators.http import require_GET
-from .services import get_current_and_forecast
+from .services import get_current_and_forecast, get_or_fetch_city_image, log_service_request
 from trip_planner.services import get_city
 from .models import City, HistoricalWeather
 from .utils.narrative import generate_narrative
-
-ARCHIVE_URL = "https://archive-api.open-meteo.com/v1/archive"
-HEADERS = {"User-Agent": "WeatherApex-HistoryFetch/1.0 (contact: dev@weathervibe.com)"}
+# Archive fetch + aggregation ab weather/historical.py mein hai (ek hi
+# formula saare paths ke liye), is liye yahan ARCHIVE_URL/HEADERS aur
+# requests/statistics/defaultdict ki zaroorat nahi rahi.
+from .historical import (
+    ensure_history,
+    has_any_history,
+    latest_complete_year,
+    target_year_range,
+)
+from api_subscription.decorators import free_usage_limit
 
 MONTH_NAMES = ["January", "February", "March", "April", "May", "June",
                "July", "August", "September", "October", "November", "December"]
 
+logger = logging.getLogger(__name__)
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Weather dikhana = site ka BASIC BROWSING. Is par "3 free calls phir
+# signup" wala feature quota NAHI lagta.
+#
+# Kyun: landing page khud load hote waqt is endpoint ko 17 dafa call
+# karta hai (hero card + 16 popular-destination cards). 3-per-din ka
+# quota lagane ka natija yeh tha ke anonymous visitor ko home page hi
+# 429 de deta tha — site khulti hi nahi thi.
+#
+# Is ki jagah ek kushada per-IP-per-minute burst guard hai
+# (WEATHER_ANON_PER_MINUTE, default 600). Aam visitor kabhi nahi
+# takrayega; scraper takrayega.
+#
+# 3-free-then-signup model SIRF features par hai: trip planner,
+# country recommend, event risk. Wahan waise hi lagta hai.
+# ──────────────────────────────────────────────────────────────────────
 
 @require_GET
+@free_usage_limit(
+    endpoint_name="weather_current",
+    anon_per_minute=getattr(settings, "WEATHER_ANON_PER_MINUTE", 600),
+)
 def current_weather_view(request):
     city_query = request.GET.get("city", "").strip()
     if not city_query:
         return JsonResponse({"error": "city parameter required"}, status=400)
 
-    city = get_city(city_query)
+    city = get_city(city_query, feature="weather")
     if not city:
         return JsonResponse({"error": "City not found"}, status=404)
 
@@ -39,100 +67,74 @@ def current_weather_view(request):
         "country": city.country,
         "latitude": city.latitude,
         "longitude": city.longitude,
+        "image_url": get_or_fetch_city_image(city),
         "current": data["current"],
         "forecast_7day": data["forecast_7day"],
         "hourly_today": data["hourly_today"],
+        "hourly_forecast": data.get("hourly_forecast", {}),
     })
 
 
-def fetch_and_store_historical(city, years_back=10):
+def fetch_and_store_historical(city, years_back=None):
+    """DEPRECATED — ab weather.historical.ensure_history() use karo.
+
+    Yeh sirf backwards compatibility ke liye bacha hai. Purana version
+    apna alag aggregation karta tha jisme `avg_rainfall` mahine ka TOTAL
+    ke bajaye ROZ ka AVERAGE bharta tha — bulk commands se 30x farq.
+    Ab sab kuch weather/historical.py ke ek hi formula se guzarta hai.
+
+    years_back diya jaye to sirf utne saal, warna settings.HISTORICAL_YEARS.
     """
-    Naye city ke liye ON-DEMAND fetch — sirf years_back saal ka
-    data, taake response fast rahe. Same HistoricalWeather table
-    mein store hota hai jo bulk job bhi use karta hai.
-    """
-    end_year = date.today().year - 1
-    start_year = end_year - years_back + 1
+    if years_back:
+        end_year = latest_complete_year()
+        start_year = end_year - years_back + 1
+    else:
+        start_year, end_year = target_year_range()
 
-    params = {
-        "latitude": city.latitude,
-        "longitude": city.longitude,
-        "start_date": f"{start_year}-01-01",
-        "end_date": f"{end_year}-12-31",
-        "daily": "temperature_2m_max,temperature_2m_min,precipitation_sum,"
-                 "sunshine_duration,relative_humidity_2m_mean",
-        "timezone": "auto",
-    }
-
-    try:
-        resp = requests.get(ARCHIVE_URL, params=params, headers=HEADERS, timeout=60)
-    except requests.exceptions.RequestException:
-        return False
-
-    if resp.status_code != 200:
-        return False
-
-    data = resp.json()
-    daily = data.get("daily", {})
-    dates = daily.get("time", [])
-    temp_max = daily.get("temperature_2m_max", [])
-    temp_min = daily.get("temperature_2m_min", [])
-    rainfall = daily.get("precipitation_sum", [])
-    sunshine = daily.get("sunshine_duration", [])
-    humidity = daily.get("relative_humidity_2m_mean", [])
-
-    # Year+month ke hisaab se group karke store karo
-    grouped = defaultdict(lambda: {"tmax": [], "tmin": [], "rain": [], "sun": [], "hum": []})
-
-    for i, d in enumerate(dates):
-        dt = date.fromisoformat(d)
-        key = (dt.year, dt.month)
-        if i < len(temp_max) and temp_max[i] is not None: grouped[key]["tmax"].append(temp_max[i])
-        if i < len(temp_min) and temp_min[i] is not None: grouped[key]["tmin"].append(temp_min[i])
-        if i < len(rainfall) and rainfall[i] is not None: grouped[key]["rain"].append(rainfall[i])
-        if i < len(sunshine) and sunshine[i] is not None: grouped[key]["sun"].append(sunshine[i])
-        if i < len(humidity) and humidity[i] is not None: grouped[key]["hum"].append(humidity[i])
-
-    for (year, month), vals in grouped.items():
-        rainy_count = sum(1 for r in vals["rain"] if r > 1.0)
-        HistoricalWeather.objects.update_or_create(
-            city=city, year=year, month=month,
-            defaults={
-                "avg_temp_max": round(statistics.mean(vals["tmax"]), 1) if vals["tmax"] else 0,
-                "avg_temp_min": round(statistics.mean(vals["tmin"]), 1) if vals["tmin"] else 0,
-                "avg_rainfall": round(statistics.mean(vals["rain"]), 1) if vals["rain"] else 0,
-                "rainy_days": round(rainy_count / len(vals["rain"]) * 30) if vals["rain"] else 0,
-                "sunshine_hours": round(statistics.mean(vals["sun"]) / 3600, 1) if vals["sun"] else 0,
-                "avg_humidity": round(statistics.mean(vals["hum"]), 1) if vals["hum"] else 0,
-            }
-        )
-
-    return True
+    info = ensure_history(city, feature="weather",
+                          start_year=start_year, end_year=end_year)
+    return info["complete"]
 
 
 @require_GET
+@free_usage_limit(
+    endpoint_name="weather_history",
+    anon_per_minute=getattr(settings, "WEATHER_ANON_PER_MINUTE", 600),
+)
 def get_historical_overview(request):
     city_query = request.GET.get("city", "").strip()
     if not city_query:
         return JsonResponse({"error": "city parameter required"}, status=400)
 
-    city = get_city(city_query)  # DB check + geocoding fallback (existing function)
+    city = get_city(city_query, feature="weather")  # DB check + geocoding fallback (existing function)
     if not city:
         return JsonResponse({"error": "City not found"}, status=404)
 
-    # STEP A — Check: is city ka kitna historical data DB mein hai?
-    existing_months = HistoricalWeather.objects.filter(city=city).values("month").distinct().count()
+    # STEP A — DB pehle. Sirf woh SAAL Open-Meteo se maango jo DB mein
+    # complete nahi hain (incremental). Pehle yahan check tha
+    # `distinct months < 12` — woh months ginta tha, saal nahi, is liye
+    # ek saal ka data bhi "complete" lagta tha aur baqi 19 saal kabhi
+    # nahi aate the. Aur fetch bhi sirf 10 saal ka hota tha.
+    info = ensure_history(city, feature="weather")
 
-    if existing_months < 12:
-        # DB mein incomplete/missing hai — ON-DEMAND fetch karo
-        success = fetch_and_store_historical(city, years_back=10)
-        if not success:
-            return JsonResponse({"error": "Could not fetch historical data"}, status=503)
+    if info["api_calls"]:
+        log_service_request("weather", "external", city.name)
+    else:
+        log_service_request("weather", "database", city.name)
 
-    # STEP B — Ab DB se aggregate karke response banao
-    monthly_data = []
-    for month in range(1, 13):
-        agg = HistoricalWeather.objects.filter(city=city, month=month).aggregate(
+    # Jo data maujood hai woh serve karo, chahe ek saal fetch fail hua ho.
+    # 503 sirf tab jab bilkul kuch bhi na ho.
+    if not has_any_history(city):
+        return JsonResponse({"error": "Could not fetch historical data"}, status=503)
+
+    # STEP B — Ab DB se aggregate karke response banao.
+    # Pehle yeh loop 12 alag aggregate queries chalata tha (har month ke
+    # liye ek). Ab ek hi GROUP BY month query se sab aa jata hai.
+    by_month = {
+        row["month"]: row
+        for row in HistoricalWeather.objects.filter(city=city)
+        .values("month")
+        .annotate(
             avg_high=Avg("avg_temp_max"),
             avg_low=Avg("avg_temp_min"),
             avg_rainfall=Avg("avg_rainfall"),
@@ -140,6 +142,15 @@ def get_historical_overview(request):
             avg_sunshine=Avg("sunshine_hours"),
             avg_humidity=Avg("avg_humidity"),
         )
+    }
+    EMPTY_AGG = {
+        "avg_high": None, "avg_low": None, "avg_rainfall": None,
+        "avg_rainy_days": None, "avg_sunshine": None, "avg_humidity": None,
+    }
+
+    monthly_data = []
+    for month in range(1, 13):
+        agg = by_month.get(month, EMPTY_AGG)
         monthly_data.append({
             "month": month,
             "avg_high": round(agg["avg_high"], 1) if agg["avg_high"] else None,
@@ -160,19 +171,31 @@ def get_historical_overview(request):
 def historical_page_view(request, city_slug):
     city = get_object_or_404(City, slug=city_slug)
 
-    # Pehle DB check karo (jaisa lazy-fetch API mein tha)
-    existing_months = HistoricalWeather.objects.filter(city=city).values("month").distinct().count()
-    if existing_months < 12:
-        fetch_and_store_historical(city, years_back=10)
+    # Wahi incremental logic jo API endpoint use karta hai.
+    info = ensure_history(city, feature="weather")
+    if info["api_calls"]:
+        log_service_request("weather", "external", city.name)
+    else:
+        log_service_request("weather", "database", city.name)
 
-    monthly_data = []
-    for month_num in range(1, 13):
-        agg = HistoricalWeather.objects.filter(city=city, month=month_num).aggregate(
+    # Yahan bhi 12 queries ki jagah ek GROUP BY month query.
+    by_month = {
+        row["month"]: row
+        for row in HistoricalWeather.objects.filter(city=city)
+        .values("month")
+        .annotate(
             avg_high=Avg("avg_temp_max"),
             avg_low=Avg("avg_temp_min"),
             avg_rainfall=Avg("avg_rainfall"),
             avg_rainy_days=Avg("rainy_days"),
         )
+    }
+    EMPTY_AGG = {"avg_high": None, "avg_low": None,
+                 "avg_rainfall": None, "avg_rainy_days": None}
+
+    monthly_data = []
+    for month_num in range(1, 13):
+        agg = by_month.get(month_num, EMPTY_AGG)
         monthly_data.append({
             "month_name": MONTH_NAMES[month_num - 1],
             "avg_high": round(agg["avg_high"], 1) if agg["avg_high"] else "-",
@@ -230,14 +253,22 @@ def historical_page_view(request, city_slug):
 
 
 def sitemap_view(request):
+    from blog.models import BlogPost
+    # Domain hardcoded tha (3 jagah). Ab settings.SITE_URL se aata hai —
+    # .env ki ek line badalne se poora sitemap update ho jata hai.
+    base = settings.SITE_URL
     cities = City.objects.all()
+    posts = BlogPost.objects.filter(is_published=True)
     xml_parts = ['<?xml version="1.0" encoding="UTF-8"?>']
     xml_parts.append('<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">')
 
-    xml_parts.append('<url><loc>https://weatherapex.com/</loc></url>')
+    xml_parts.append(f'<url><loc>{base}/</loc></url>')
 
     for city in cities:
-        xml_parts.append(f'<url><loc>https://weatherapex.com/weather/{city.slug}/</loc></url>')
+        xml_parts.append(f'<url><loc>{base}/weather/{city.slug}/</loc></url>')
+
+    for post in posts:
+        xml_parts.append(f'<url><loc>{base}/blog/{post.slug}/</loc></url>')
 
     xml_parts.append('</urlset>')
 

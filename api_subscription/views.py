@@ -1,3 +1,7 @@
+import logging
+
+from django.contrib.auth.password_validation import validate_password
+from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
@@ -7,10 +11,12 @@ from django.contrib.auth import authenticate
 from google.oauth2 import id_token
 from google.auth.transport import requests as google_requests
 from django.conf import settings
-from drf_spectacular.utils import extend_schema, OpenApiTypes
+from drf_spectacular.utils import extend_schema
 
 from .models import APICustomer, APIKey
 from .utils import create_and_send_otp, verify_otp
+
+logger = logging.getLogger(__name__)
 
 
 def issue_tokens(user):
@@ -39,6 +45,13 @@ def register_request(request):
         return Response({"error": "username, email and password required"}, status=400)
     if len(password) < 8:
         return Response({"error": "Password must be at least 8 characters"}, status=400)
+    # settings.AUTH_PASSWORD_VALIDATORS configured thay magar register pe
+    # kabhi run nahi hote thay — "password" / "12345678" jaise passwords
+    # aaraam se accept ho jate thay. Ab actually enforce hote hain.
+    try:
+        validate_password(password)
+    except DjangoValidationError as exc:
+        return Response({"error": exc.messages[0], "all_errors": list(exc.messages)}, status=400)
     if User.objects.filter(username=username).exists():
         return Response({"error": "Username already taken."}, status=400)
     if User.objects.filter(email=email).exists():
@@ -49,7 +62,18 @@ def register_request(request):
     user.save()
     APICustomer.objects.create(user=user, company_name=company_name, plan="free")
 
-    create_and_send_otp(email, "register")
+    # Agar SMTP down ho to pehle 500 aata tha aur inactive user row DB
+    # mein reh jati thi — us email/username se dobara register karna
+    # hamesha ke liye block ho jata tha. Ab rollback karke 503 dete hain.
+    try:
+        create_and_send_otp(email, "register")
+    except Exception:
+        logger.exception("Registration OTP email bhejne mein fail: %s", email)
+        user.delete()   # APICustomer bhi cascade se delete ho jayega
+        return Response(
+            {"error": "Could not send verification email. Please try again shortly."},
+            status=503,
+        )
 
     return Response({
         "message": "OTP sent to your email. Verify to complete registration.",
@@ -79,13 +103,14 @@ def verify_registration_otp(request):
     if not is_valid:
         return Response({"error": message}, status=400)
 
-    try:
-        user = User.objects.get(email=email)
-    except User.DoesNotExist:
+    # .get() ki jagah .filter().first() — duplicate email pe
+    # MultipleObjectsReturned se 500 aa raha tha.
+    user = User.objects.filter(email=email).order_by("id").first()
+    if user is None:
         return Response({"error": "User not found"}, status=404)
 
     user.is_active = True
-    user.save()
+    user.save(update_fields=["is_active"])
 
     tokens = issue_tokens(user)
     tokens["plan"] = "free"
@@ -114,10 +139,9 @@ def login_view(request):
 
     user = None
     if "@" in login_id:
-        try:
-            user = User.objects.get(email=login_id.lower())
-        except User.DoesNotExist:
-            pass
+        # .get() duplicate email pe MultipleObjectsReturned phenk kar 500
+        # deta tha (Django ka User.email unique nahi hota).
+        user = User.objects.filter(email=login_id.lower()).order_by("id").first()
     if user is None:
         user = authenticate(username=login_id, password=password)
     else:
@@ -169,18 +193,22 @@ def forgot_password_confirm(request):
 
     if len(new_password) < 8:
         return Response({"error": "Password must be at least 8 characters"}, status=400)
+    # Password reset pe bhi wahi validators lagao.
+    try:
+        validate_password(new_password)
+    except DjangoValidationError as exc:
+        return Response({"error": exc.messages[0], "all_errors": list(exc.messages)}, status=400)
 
     is_valid, message = verify_otp(email, otp_code, "password_reset")
     if not is_valid:
         return Response({"error": message}, status=400)
 
-    try:
-        user = User.objects.get(email=email)
-    except User.DoesNotExist:
+    user = User.objects.filter(email=email).order_by("id").first()
+    if user is None:
         return Response({"error": "User not found"}, status=404)
 
     user.set_password(new_password)
-    user.save()
+    user.save(update_fields=["password"])
 
     return Response({"message": "Password reset successful. Please login."}, status=200)
 
@@ -325,11 +353,17 @@ def list_api_keys(request):
 @api_view(['DELETE'])
 @permission_classes([IsAuthenticated])
 def revoke_api_key(request, key_id):
+    # APICustomer.DoesNotExist yahan catch nahi ho raha tha -> 500.
     try:
         customer = request.user.apicustomer
+    except APICustomer.DoesNotExist:
+        return Response({"error": "No API customer profile found"}, status=403)
+
+    try:
         key = APIKey.objects.get(id=key_id, customer=customer)
-        key.is_active = False
-        key.save()
-        return Response({"message": "API key revoked"})
     except APIKey.DoesNotExist:
         return Response({"error": "Key not found"}, status=404)
+
+    key.is_active = False
+    key.save(update_fields=["is_active"])
+    return Response({"message": "API key revoked"})

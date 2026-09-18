@@ -5,6 +5,15 @@ class AffiliateProduct(models.Model):
     name = models.CharField(max_length=150)
     category = models.CharField(max_length=50)
     affiliate_url = models.URLField()
+    image_url = models.URLField(
+        blank=True,
+        help_text=("Amazon product image URL — 'Get Link' page se image "
+                   "right-click karke 'Copy Image Address' se milega")
+    )
+    price_display = models.CharField(
+        max_length=20, blank=True,
+        help_text="Optional — jaise '$24.99', sirf display ke liye"
+    )
     priority = models.IntegerField(default=0)
     is_active = models.BooleanField(default=True)
 

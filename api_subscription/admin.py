@@ -17,9 +17,14 @@ class APICallLogAdmin(admin.ModelAdmin):
 
 @admin.register(OTPVerification)
 class OTPVerificationAdmin(admin.ModelAdmin):
-    list_display = ("email", "otp_code", "purpose", "is_used", "attempts", "created_at", "expires_at")
+    # SECURITY: otp_code list/detail mein show NAHI karna. Warna koi bhi
+    # staff user kisi bhi email ka live password-reset OTP padh kar
+    # us account ka password reset kar sakta hai.
+    list_display = ("email", "purpose", "is_used", "attempts", "created_at", "expires_at")
     list_filter = ("purpose", "is_used")
     search_fields = ("email",)
+    exclude = ("otp_code",)
+    readonly_fields = ("email", "purpose", "is_used", "attempts", "created_at", "expires_at")
 
 
 @admin.register(FreeUsage)

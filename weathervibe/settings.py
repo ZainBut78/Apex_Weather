@@ -12,6 +12,8 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 
 import os
 from pathlib import Path
+from urllib.parse import urlparse
+
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -23,11 +25,115 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
 
-SECRET_KEY = os.getenv('SECRET_KEY', 'django-insecure-3an_j0^96k!s461jx8j0ceij*83^7yr4c&=6(s#t@c-sh##=v-')
+# DEBUG defaults to FALSE: agar .env load na ho (production server pe
+# galti se missing), to site safe mode mein chalegi — debug pages leak nahi hongi.
+DEBUG = os.getenv('DEBUG', 'False') == 'True'
 
-DEBUG = os.getenv('DEBUG', 'True') == 'True'
+# SECRET_KEY ka koi hardcoded fallback nahi — production mein missing key
+# chupchap insecure default use karne se behtar hai loudly fail karna.
+SECRET_KEY = os.getenv('SECRET_KEY')
+if not SECRET_KEY:
+    if DEBUG:
+        SECRET_KEY = 'django-insecure-dev-only-key-do-not-use-in-production'
+    else:
+        from django.core.exceptions import ImproperlyConfigured
+        raise ImproperlyConfigured(
+            "SECRET_KEY environment variable set nahi hai. "
+            "Production ke liye .env mein ek fresh 50+ character random key rakho."
+        )
 
-ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
+# ═════════════════════════════════════════════════════════════
+# SITE_URL — poore project ka SINGLE source of truth for base URL.
+#
+# .env mein SIRF yeh ek line badlo, baqi sab khud adjust ho jayega:
+#
+#     SITE_URL=http://localhost:8000        <- local testing (abhi)
+#     SITE_URL=https://weatherapex.com      <- live domain
+#     SITE_URL=https://koi-bhi-domain.pk    <- kuch aur kharida to
+#
+# Ye sab isi se bante hain — kahin aur domain likhne ki zaroorat nahi:
+#     * sitemap.xml ke saare URLs
+#     * robots.txt ka "Sitemap:" line
+#     * templates ka canonical tag   ->  {{ SITE_URL }}
+#     * ALLOWED_HOSTS                (apex + www + localhost)
+#     * CORS_ALLOWED_ORIGINS         (apex + www, port ke sath)
+#     * CSRF_TRUSTED_ORIGINS         (HTTPS pe admin login ke liye zaroori)
+#     * /api/docs/ ka server URL
+#
+# Scheme likhna zaroori nahi: "weatherapex.com" bhi chalega — https khud
+# lag jata hai (localhost/IP pe http). Trailing slash bhi chal jati hai.
+# ═════════════════════════════════════════════════════════════
+def _normalise_site_url(raw):
+    raw = (raw or '').strip().rstrip('/')
+    if not raw:
+        return ''
+    if '://' not in raw:
+        host_only = raw.split('/')[0].split(':')[0]
+        is_local = (host_only in ('localhost', '127.0.0.1', '0.0.0.0')
+                    or host_only.replace('.', '').isdigit())
+        raw = ('http://' if is_local else 'https://') + raw
+    return raw.rstrip('/')
+
+
+SITE_URL = _normalise_site_url(os.getenv('SITE_URL'))
+if not SITE_URL:
+    if DEBUG:
+        # Local development ka default — .env mein SITE_URL na ho to bhi chale.
+        SITE_URL = 'http://localhost:8000'
+    else:
+        from django.core.exceptions import ImproperlyConfigured
+        raise ImproperlyConfigured(
+            "SITE_URL set nahi hai. Production (DEBUG=False) mein yeh zaroori "
+            "hai — warna sitemap.xml aur canonical tags mein localhost URLs "
+            "chali jayengi aur Google unhe index kar lega. .env mein daalo: "
+            "SITE_URL=https://aapka-domain.com"
+        )
+
+_parsed_site = urlparse(SITE_URL)
+SITE_HOST = _parsed_site.hostname or 'localhost'
+SITE_SCHEME = _parsed_site.scheme or 'https'
+_site_port_suffix = f':{_parsed_site.port}' if _parsed_site.port else ''
+
+
+def _dedupe(items):
+    seen, out = set(), []
+    for x in items:
+        x = (x or '').strip()
+        if x and x not in seen:
+            seen.add(x)
+            out.append(x)
+    return out
+
+
+def _site_hosts():
+    """[host, www.host] — localhost/IP pe www add nahi karta."""
+    if (SITE_HOST.startswith('www.') or SITE_HOST == 'localhost'
+            or SITE_HOST.replace('.', '').isdigit()):
+        return [SITE_HOST]
+    return [SITE_HOST, f'www.{SITE_HOST}']
+
+
+def _site_origins():
+    """Poore origins (scheme://host:port) — CORS aur CSRF ke liye."""
+    return [f'{SITE_SCHEME}://{h}{_site_port_suffix}' for h in _site_hosts()]
+
+
+# ALLOWED_HOSTS — localhost/127.0.0.1 HAMESHA shamil, kyunke gunicorn
+# 127.0.0.1 pe bind hota hai aur local health check warna 400 deta hai.
+# .env mein ALLOWED_HOSTS de do to woh jeet jayega (multi-domain setups).
+ALLOWED_HOSTS = _dedupe(
+    os.getenv(
+        'ALLOWED_HOSTS',
+        ','.join(_site_hosts() + ['localhost', '127.0.0.1']),
+    ).split(',')
+)
+
+# CSRF_TRUSTED_ORIGINS — Django 4+ mein HTTPS ke peeche admin ka POST
+# (login / save) iske baghair "CSRF verification failed" deta hai.
+# Deploy ke baad ka classic masla; SITE_URL se khud ban jata hai.
+CSRF_TRUSTED_ORIGINS = _dedupe(
+    os.getenv('CSRF_TRUSTED_ORIGINS', ','.join(_site_origins())).split(',')
+)
 
 
 # Application definition
@@ -48,6 +154,9 @@ INSTALLED_APPS = [
     'historical',
     'api_subscription',
     'drf_spectacular',
+    'ckeditor',
+    'ckeditor_uploader',
+    'blog',
 ]
 
 MIDDLEWARE = [
@@ -66,13 +175,15 @@ ROOT_URLCONF = 'weathervibe.urls'
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [],
+        'DIRS': [BASE_DIR / 'templates'],
         'APP_DIRS': True,
         'OPTIONS': {
             'context_processors': [
                 'django.template.context_processors.request',
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
+                # {{ SITE_URL }} har template mein available
+                'weathervibe.context_processors.site',
             ],
         },
     },
@@ -131,10 +242,40 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/6.0/howto/static-files/
 
 STATIC_URL = 'static/'
+# collectstatic ke liye zaroori — iske bina production deploy pe
+# `manage.py collectstatic` error deta hai.
+STATIC_ROOT = BASE_DIR / 'staticfiles'
+
+MEDIA_URL = '/media/'
+MEDIA_ROOT = BASE_DIR / 'media'
+
+CKEDITOR_UPLOAD_PATH = "uploads/"
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-DEFAULT_FROM_EMAIL = 'noreply@weathervibe.com'
+# NOTE: DEFAULT_FROM_EMAIL neeche EMAIL settings ke sath set hota hai
+# (= EMAIL_HOST_USER). Pehle yahan ek 'noreply@weathervibe.com' wali line
+# thi jo neeche se overwrite ho jati thi — dead code tha, hata diya.
+
+# ─────────────────────────────────────────────────────────────
+# Historical data kitne saal ka rakhna hai (apne database mein).
+# Target range khud calculate hoti hai: aakhri poora saal se peeche
+# HISTORICAL_YEARS saal. 2026 mein 20 ka matlab 2006-2025.
+#
+# Agla saal aane par range khud khisak jati hai, aur
+# `manage.py sync_historical` SIRF us naye saal ke liye Open-Meteo ko
+# call karta hai — purana data dobara nahi aata.
+#
+# NOTE: purane HISTORICAL_START_DATE / HISTORICAL_END_DATE .env mein
+# thay magar unhe koi code padhta hi nahi tha (dead config). Ab
+# yeh ek knob unki jagah hai.
+# ─────────────────────────────────────────────────────────────
+try:
+    HISTORICAL_YEARS = int(os.getenv('HISTORICAL_YEARS', '20'))
+except ValueError:
+    HISTORICAL_YEARS = 20
+if HISTORICAL_YEARS < 1:
+    HISTORICAL_YEARS = 1
 
 OPEN_METEO_API_BASE = 'https://api.open-meteo.com/v1'
 OPEN_METEO_ARCHIVE_API_BASE = 'https://archive-api.open-meteo.com/v1'
@@ -142,18 +283,68 @@ OPEN_METEO_ARCHIVE_URL = os.getenv('OPEN_METEO_ARCHIVE_URL', 'https://archive-ap
 OPEN_METEO_GEOCODING_URL = os.getenv('OPEN_METEO_GEOCODING_URL', 'https://geocoding-api.open-meteo.com/v1/search')
 OPEN_METEO_FORECAST_URL = os.getenv('OPEN_METEO_FORECAST_URL', 'https://api.open-meteo.com/v1/forecast')
 
-CACHES = {
-    'default': {
-        'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
-        'LOCATION': 'unique-snowflake',
+# ═════════════════════════════════════════════════════════════
+# CACHE — SHARED hona zaroori hai
+#
+# Pehle yahan LocMemCache tha. Woh har PROCESS ki apni memory mein
+# hota hai, aur gunicorn 3 workers ke sath chalta hai
+# (ecosystem.config.js: --workers 3). Nateeja:
+#
+#   * ek hi city ka data teen alag jaghon par cache hota tha, yani
+#     Open-Meteo ko TEEN guna calls jati thin
+#   * rate limit counters bhi teen alag — 3 free calls ka matlab
+#     amli tor par 9 ho jata tha
+#   * server restart par saari cache khatam
+#
+# Ab ek hi shared cache sab workers ke liye.
+#
+# DEFAULT: DatabaseCache — kisi naye service ki zaroorat nahi, wahi
+# Postgres jo pehle se chal raha hai. Ek dafa yeh command chalani hai:
+#
+#     python manage.py createcachetable
+#
+# Redis chahiye to .env mein bas yeh line:
+#     CACHE_URL=redis://127.0.0.1:6379/1
+# ═════════════════════════════════════════════════════════════
+CACHE_URL = os.getenv('CACHE_URL', '').strip()
+
+if CACHE_URL.startswith('redis://') or CACHE_URL.startswith('rediss://'):
+    CACHES = {
+        'default': {
+            'BACKEND': 'django_redis.cache.RedisCache',
+            'LOCATION': CACHE_URL,
+            'OPTIONS': {'CLIENT_CLASS': 'django_redis.client.DefaultClient'},
+            'KEY_PREFIX': 'wapex',
+        }
     }
-}
+else:
+    CACHES = {
+        'default': {
+            'BACKEND': 'django.core.cache.backends.db.DatabaseCache',
+            'LOCATION': 'weathervibe_cache',
+            'KEY_PREFIX': 'wapex',
+            'OPTIONS': {
+                # Cache table bharne par kitna hissa saaf karna hai.
+                # 3 = ek tihai. (default 1/3 hi hai, sirf sareeh kiya.)
+                'MAX_ENTRIES': 50000,
+                'CULL_FREQUENCY': 3,
+            },
+        }
+    }
 
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
         'rest_framework_simplejwt.authentication.JWTAuthentication',
     ),
     'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
+}
+
+# /api/docs/ pe "Try it out" button sahi host pe jaye — yeh bhi SITE_URL se.
+SPECTACULAR_SETTINGS = {
+    'TITLE': 'WeatherApex API',
+    'VERSION': '1.0.0',
+    'SERVE_INCLUDE_SCHEMA': False,
+    'SERVERS': [{'url': SITE_URL}],
 }
 
 from datetime import timedelta
@@ -173,7 +364,126 @@ DEFAULT_FROM_EMAIL = EMAIL_HOST_USER
 
 GOOGLE_OAUTH_CLIENT_ID = os.getenv('GOOGLE_OAUTH_CLIENT_ID', '')
 
+# Open-Meteo/Pexels ko bheje jane wale User-Agent header ka contact email.
+# Open-Meteo ki etiquette yeh maangti hai ke asli contact ho.
+API_CONTACT_EMAIL = os.getenv('API_CONTACT_EMAIL', 'dev@weathervibe.com')
+
+# ─────────────────────────────────────────────────────────────
+# Anonymous (bina login) website visitor ko rozana kitni free
+# calls milengi — per IP, per endpoint.
+#
+# Yeh B2B API keys se BILKUL alag cheez hai. API key wali limit
+# api_subscription/plan_config.py mein hai (free plan = 100 calls
+# LIFETIME, 10 req/min).
+#
+# .env mein badal sakte ho:  FREE_DAILY_LIMIT=10
+# ─────────────────────────────────────────────────────────────
+try:
+    FREE_DAILY_LIMIT = int(os.getenv('FREE_DAILY_LIMIT', '3'))
+except ValueError:
+    FREE_DAILY_LIMIT = 3
+if FREE_DAILY_LIMIT < 1:
+    FREE_DAILY_LIMIT = 1
+
+# ─────────────────────────────────────────────────────────────
+# Logged-in website user = UNLIMITED. Yeh sirf abuse/script se
+# bachne ka burst guard hai — per user, per minute.
+# 60 ka matlab: normal insan kabhi nahi chhuta (ek minute mein
+# 60 clicks?), magar script foran ruk jati hai.
+# 0 kar do to bilkul unlimited (koi guard nahi).
+# .env:  LOGGED_IN_PER_MINUTE=60
+# ─────────────────────────────────────────────────────────────
+try:
+    LOGGED_IN_PER_MINUTE = int(os.getenv('LOGGED_IN_PER_MINUTE', '60'))
+except ValueError:
+    LOGGED_IN_PER_MINUTE = 60
+if LOGGED_IN_PER_MINUTE < 0:
+    LOGGED_IN_PER_MINUTE = 0
+
+# ─────────────────────────────────────────────────────────────
+# Weather browsing ka burst guard (anonymous visitor, per IP).
+#
+# Weather dikhana site ka basic browsing hai — us par "3 free phir
+# signup" wala feature quota nahi lagta. Landing page khud ek load par
+# is endpoint ko 17 dafa call karta hai (hero + 16 destination cards),
+# is liye limit kushada rakhi hai: 600/minute = ek visitor minute mein
+# ~35 dafa home page load kar sakta hai. Aam banda — ya testing ke
+# dauran aap — kabhi nahi takrayega; scraper takrayega.
+#
+# Yeh endpoint sasta hai (cache/DB se serve hota hai, Open-Meteo ko
+# call nahi jati), is liye limit tang rakhne ka koi faida nahi.
+#
+# 3-free-then-signup SIRF features par hai (trip planner, country
+# recommend, event risk) — FREE_DAILY_LIMIT us ke liye hai.
+# 0 kar do to koi guard nahi.
+# .env:  WEATHER_ANON_PER_MINUTE=600
+# ─────────────────────────────────────────────────────────────
+try:
+    WEATHER_ANON_PER_MINUTE = int(os.getenv('WEATHER_ANON_PER_MINUTE', '600'))
+except ValueError:
+    WEATHER_ANON_PER_MINUTE = 600
+if WEATHER_ANON_PER_MINUTE < 0:
+    WEATHER_ANON_PER_MINUTE = 0
+
+# ─────────────────────────────────────────────────────────────
+# Logging — iske bina logger.error()/exception() kahin dikhte nahi.
+# ─────────────────────────────────────────────────────────────
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'verbose': {
+            'format': '[{asctime}] {levelname} {name}: {message}',
+            'style': '{',
+        },
+    },
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+            'formatter': 'verbose',
+        },
+    },
+    'root': {
+        'handlers': ['console'],
+        'level': 'INFO',
+    },
+    'loggers': {
+        'django.request': {
+            'handlers': ['console'],
+            'level': 'ERROR',
+            'propagate': False,
+        },
+    },
+}
+
+# ─────────────────────────────────────────────────────────────
+# Production security headers — sirf DEBUG=False pe active hote
+# hain, is liye local development par koi asar nahi padta.
+# ─────────────────────────────────────────────────────────────
+if not DEBUG:
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    SECURE_HSTS_SECONDS = 31536000          # 1 saal
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+    SECURE_HSTS_PRELOAD = True
+    SECURE_CONTENT_TYPE_NOSNIFF = True
+    X_FRAME_OPTIONS = 'DENY'
+    SECURE_REFERRER_POLICY = 'strict-origin-when-cross-origin'
+    # Nginx/proxy ke peeche HTTPS detect karne ke liye. Sirf tab enable
+    # karo jab proxy waqai X-Forwarded-Proto bhej raha ho.
+    if os.getenv('USE_PROXY_SSL_HEADER', 'True') == 'True':
+        SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+    # HTTP -> HTTPS redirect. Default OFF, kyunke galat proxy config pe
+    # redirect loop ban sakta hai. Deploy ke waqt .env mein True karo.
+    SECURE_SSL_REDIRECT = os.getenv('SECURE_SSL_REDIRECT', 'False') == 'True'
+
 # CORS — /api/v1/ endpoints ke liye (B2B API)
 # DEBUG=True: sab allow (dev), DEBUG=False: sirf specific domains (production)
 CORS_ALLOW_ALL_ORIGINS = DEBUG
-CORS_ALLOWED_ORIGINS = os.getenv('CORS_ALLOWED_ORIGINS', 'https://weatherapex.com,https://www.weatherapex.com').split(',')
+# Default SITE_URL se banta hai (apex + www). Zyada domains chahiye to
+# .env mein CORS_ALLOWED_ORIGINS comma-separated de do.
+# Default SITE_URL se banta hai (apex + www, port ke sath). Extra frontend
+# domains chahiye to .env mein CORS_ALLOWED_ORIGINS comma-separated de do.
+CORS_ALLOWED_ORIGINS = _dedupe(
+    os.getenv('CORS_ALLOWED_ORIGINS', ','.join(_site_origins())).split(',')
+)

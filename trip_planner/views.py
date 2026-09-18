@@ -2,10 +2,24 @@ from datetime import date
 from django.http import JsonResponse
 from django.views.decorators.http import require_GET
 
-from .services import get_city, fetch_forecast, fetch_hourly_forecast, get_historical_estimate
+from .services import (
+    KIND_CITY,
+    KIND_COUNTRY,
+    KIND_REGION,
+    country_not_a_city_error,
+    fetch_forecast,
+    fetch_hourly_forecast,
+    get_historical_estimate,
+    lookup_place,
+)
 from .scoring import calculate_day_score, calculate_day_parts
 from .activity import recommend_daily_activity, ACTIVITY_TO_AFFILIATE_CATEGORY
-from affiliates.engine import get_product_recommendations, get_products_by_category
+from affiliates.engine import (
+    get_default_packing_recommendations,
+    get_product_recommendations,
+    get_products_by_categories,
+)
+from weather.services import get_or_fetch_city_image, fetch_city_images
 from api_subscription.decorators import free_usage_limit
 
 
@@ -29,16 +43,25 @@ def build_trip_plan_response(city_query, start_str, end_str):
     if total_days > 20:
         return {"error": "Max 20 days supported for now", "status": 400}
 
-    city = get_city(city_query)
-    if city is None:
+    place = lookup_place(city_query, feature="trip_planner")
+    if place["kind"] != KIND_CITY:
+        if place["kind"] in (KIND_COUNTRY, KIND_REGION):
+            # Trip Planner ka apna COUNTRY mode maujood hai, to user ko
+            # wahan bheja ja sakta hai — frontend isi hint se button
+            # dikhata hai.
+            err = country_not_a_city_error(place)
+            err["try_country_mode"] = True
+            return err
         return {"error": "City not found", "status": 404}
+    city = place["city"]
 
     today = date.today()
     days_until_end = (end_date - today).days
 
     if days_until_end <= 16:
         data_source = "forecast"
-        raw = fetch_forecast(city.latitude, city.longitude, start_str, end_str)
+        raw = fetch_forecast(city.latitude, city.longitude, start_str, end_str,
+                             country=city.country)
     else:
         data_source = "historical_estimate"
         raw = get_historical_estimate(city, start_date, end_date)
@@ -48,7 +71,14 @@ def build_trip_plan_response(city_query, start_str, end_str):
 
     hourly_raw = None
     if data_source == "forecast":
-        hourly_raw = fetch_hourly_forecast(city.latitude, city.longitude, start_str, end_str)
+        hourly_raw = fetch_hourly_forecast(city.latitude, city.longitude, start_str, end_str,
+                                           country=city.country)
+
+    # Saari activity categories ke products ek hi query mein — warna
+    # neeche wale loop mein har din ke liye alag query lagti thi.
+    products_by_category = get_products_by_categories(
+        ACTIVITY_TO_AFFILIATE_CATEGORY.values()
+    )
 
     days = []
     dates = raw.get("time", [])
@@ -71,7 +101,7 @@ def build_trip_plan_response(city_query, start_str, end_str):
             rp, w, t_max, city.is_coastal, city.has_hiking_trails
         )
         affiliate_category = ACTIVITY_TO_AFFILIATE_CATEGORY[activity]
-        day_products = get_products_by_category(affiliate_category)
+        day_products = products_by_category.get(affiliate_category, [])
 
         days.append({
             "date": d,
@@ -98,9 +128,14 @@ def build_trip_plan_response(city_query, start_str, end_str):
         worst = min(days, key=lambda d: (d["score"], -d["rain_probability"]))["date"]
         note = None
 
+    packing = get_product_recommendations(days)
+    if not packing:
+        packing = get_default_packing_recommendations(days)
+
     return {
         "city": city.name,
         "country": city.country,
+        "image_url": get_or_fetch_city_image(city),
         "data_source": data_source,
         "start_date": start_str,
         "end_date": end_str,
@@ -108,7 +143,7 @@ def build_trip_plan_response(city_query, start_str, end_str):
         "days": days,
         "best_day": best,
         "worst_day": worst,
-        "packing_suggestions": get_product_recommendations(days),
+        "packing_suggestions": packing,
         "note": note,
     }
 
@@ -141,6 +176,7 @@ def city_search_view(request):
 
 
 @require_GET
+@free_usage_limit(endpoint_name="country_recommend")
 def country_recommend_view(request):
     country = request.GET.get("country", "").strip()
     start = request.GET.get("start", "").strip()
@@ -149,6 +185,20 @@ def country_recommend_view(request):
     if not country or not start or not end:
         return JsonResponse({"error": "country, start, end required"}, status=400)
 
+    # Dates validate karo AAGE bharne se pehle. Warna invalid date
+    # Open-Meteo ko jati thi, batch call 400 deta tha, aur code
+    # sequential fallback mein har city ke liye ek aur call bhejta tha
+    # (10 cities = 11 waste external calls per bad request).
+    try:
+        start_date = date.fromisoformat(start)
+        end_date = date.fromisoformat(end)
+    except ValueError:
+        return JsonResponse({"error": "Invalid date format. Use YYYY-MM-DD"}, status=400)
+    if end_date < start_date:
+        return JsonResponse({"error": "end must be on or after start"}, status=400)
+    if (end_date - start_date).days + 1 > 20:
+        return JsonResponse({"error": "Max 20 days supported for now"}, status=400)
+
     from weather.models import City
     cities = list(City.objects.filter(country__iexact=country)[:10])
     if not cities:
@@ -156,6 +206,7 @@ def country_recommend_view(request):
 
     from .services import fetch_forecast_batch
     batch = fetch_forecast_batch(cities, start, end)
+    city_images = fetch_city_images(cities)
 
     ranked = []
     if batch:
@@ -188,11 +239,13 @@ def country_recommend_view(request):
                 "city": city.name,
                 "slug": city.slug,
                 "country": city.country,
+                "image_url": city_images.get(city.id),
                 "average_score": avg_score,
             })
     else:
         for city in cities:
-            raw = fetch_forecast(city.latitude, city.longitude, start, end)
+            raw = fetch_forecast(city.latitude, city.longitude, start, end,
+                                 country=city.country)
             if raw is None:
                 continue
 
@@ -218,6 +271,7 @@ def country_recommend_view(request):
                 "city": city.name,
                 "slug": city.slug,
                 "country": city.country,
+                "image_url": city_images.get(city.id),
                 "average_score": avg_score,
             })
 

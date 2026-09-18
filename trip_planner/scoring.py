@@ -1,4 +1,11 @@
 def calculate_day_score(rain_prob, wind_kmh, temp_max, temp_min):
+    # Open-Meteo kabhi kabhi null values deta hai (khaas kar forecast
+    # horizon ke kinare pe). events/scoring.py mein yeh guard pehle se
+    # tha, yahan nahi — None > 20 comparison TypeError deta tha.
+    rain_prob = rain_prob or 0
+    temp_max = temp_max if temp_max is not None else 0
+    temp_min = temp_min if temp_min is not None else 0
+
     score = 10.0
 
     if rain_prob > 20:
