@@ -1,5 +1,5 @@
 # 1. Python environment set up kar raha hai
-FROM python:3.10-slim
+FROM python:3.12-slim
 
 # 2. Python logs ko real-time terminal pe dikhane ke liye
 ENV PYTHONUNBUFFERED=1
