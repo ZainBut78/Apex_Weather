@@ -18,4 +18,4 @@ COPY . /app/
 EXPOSE 8000
 
 # 7. Production server (Gunicorn) ko start karega
-CMD ["gunicorn", "--bind", "0.0.0.0:8000", "Apex_Weather.wsgi:application"]
+CMD ["sh", "-c", "python manage.py migrate && gunicorn Apex_Weather.wsgi:application --bind 0.0.0.0:8000"]
