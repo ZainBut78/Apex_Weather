@@ -17,5 +17,5 @@ COPY . /app/
 # 6. Django server ka port expose kar raha hai
 EXPOSE 8000
 
-# 7. Production server (Gunicorn) ko start karega
-CMD ["sh", "-c", "python manage.py migrate && gunicorn Apex_Weather.wsgi:application --bind 0.0.0.0:8000"]
+# 7. Production server (Gunicorn) ko s
+CMD ["sh", "-c", "python manage.py migrate && gunicorn weathervibe.wsgi:application --bind 0.0.0.0:8000"]
